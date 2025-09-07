@@ -58,14 +58,21 @@ def letterbox(im, new_shape=(640, 640), color=(114, 114, 114), scaleFill=False, 
 
 def box_iou(box1, box2):
     # box1: (N,4) xyxy, box2: (M,4)
-    def area(b):
-        return (b[:, 2] - b[:, 0]).clip(0) * (b[:, 3] - b[:, 1]).clip(0)
+    # Promote to float32 to avoid fp16 overflows and NaNs
+    box1 = box1.astype(np.float32, copy=False)
+    box2 = box2.astype(np.float32, copy=False)
 
-    inter = (
-        np.maximum(0, np.minimum(box1[:, None, 2], box2[None, :, 2]) - np.maximum(box1[:, None, 0], box2[None, :, 0]))
-        * np.maximum(0, np.minimum(box1[:, None, 3], box2[None, :, 3]) - np.maximum(box1[:, None, 1], box2[None, :, 1]))
-    )
-    return inter / (area(box1)[:, None] + area(box2)[None, :] - inter + 1e-6)
+    def area(b):
+        w = (b[:, 2] - b[:, 0]).clip(0)
+        h = (b[:, 3] - b[:, 1]).clip(0)
+        return w * h
+
+    iw = np.maximum(0.0, np.minimum(box1[:, None, 2], box2[None, :, 2]) - np.maximum(box1[:, None, 0], box2[None, :, 0]))
+    ih = np.maximum(0.0, np.minimum(box1[:, None, 3], box2[None, :, 3]) - np.maximum(box1[:, None, 1], box2[None, :, 1]))
+    inter = iw * ih
+    denom = area(box1)[:, None] + area(box2)[None, :] - inter + 1e-6
+    iou = inter / denom
+    return np.nan_to_num(iou, nan=0.0, posinf=0.0, neginf=0.0)
 
 
 def nms(boxes, scores, iou_thres=0.45, max_det=300):
@@ -85,6 +92,7 @@ def nms(boxes, scores, iou_thres=0.45, max_det=300):
 def postprocess(pred, img_shape, pad, scale, conf_thres=0.25, iou_thres=0.45, max_det=300):
     # pred: (N, 85) -> xywh + obj + cls_scores
     # Convert to xyxy on original image space and apply NMS
+    pred = pred.astype(np.float32, copy=False)
     xywh = pred[:, :4]
     obj = pred[:, 4:5]
     cls = pred[:, 5:]
@@ -106,7 +114,7 @@ def postprocess(pred, img_shape, pad, scale, conf_thres=0.25, iou_thres=0.45, ma
     y1 = y - h / 2
     x2 = x + w / 2
     y2 = y + h / 2
-    boxes = np.stack([x1, y1, x2, y2], axis=1)
+    boxes = np.stack([x1, y1, x2, y2], axis=1).astype(np.float32, copy=False)
 
     # Undo letterbox scaling
     (h0, w0) = img_shape
@@ -117,9 +125,10 @@ def postprocess(pred, img_shape, pad, scale, conf_thres=0.25, iou_thres=0.45, ma
     boxes[:, [0, 2]] /= gain
     boxes[:, [1, 3]] /= gain
 
-    # Clip
+    # Clip and ensure finite
     boxes[:, [0, 2]] = boxes[:, [0, 2]].clip(0, w0)
     boxes[:, [1, 3]] = boxes[:, [1, 3]].clip(0, h0)
+    boxes = np.nan_to_num(boxes, nan=0.0, posinf=0.0, neginf=0.0)
 
     # NMS
     keep = nms(boxes, scores, iou_thres=iou_thres, max_det=max_det)
