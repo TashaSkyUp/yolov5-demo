@@ -89,7 +89,13 @@ def ensure_15_classes():
     return classes15
 
 
-def ensure_sample_image():
+def ensure_sample_image(override: str | None = None):
+    if override:
+        p = Path(override)
+        if not p.exists():
+            raise SystemExit(f"Provided --image not found: {p}")
+        print(f"Using provided image: {p}")
+        return p
     sample = Path("samples/sample.jpg")
     if sample.exists():
         print(f"Sample image present: {sample}")
@@ -99,7 +105,13 @@ def ensure_sample_image():
     return sample
 
 
-def ensure_calib_images(n=200, imgsz=640):
+def ensure_calib_images(n=200, imgsz=640, override: str | None = None):
+    if override:
+        d = Path(override)
+        if not d.exists() or not any(d.glob("*.jpg")):
+            raise SystemExit(f"Provided --calib-dir is empty or missing .jpg images: {d}")
+        print(f"Using provided calibration dir: {d}")
+        return d
     d = Path("calib_images")
     if d.exists() and any(d.glob("*.jpg")):
         print(f"Calibration directory present: {d}")
@@ -125,6 +137,8 @@ def main():
     ap.add_argument("--intra", type=int, default=8)
     ap.add_argument("--inter", type=int, default=4)
     ap.add_argument("--int8-dir", default="models/int8")
+    ap.add_argument("--image", help="Path to a real image for the final inference step")
+    ap.add_argument("--calib-dir", help="Path to a real calibration images directory (jpgs)")
     ap.add_argument("--skip-quant", action="store_true")
     args = ap.parse_args()
 
@@ -138,7 +152,7 @@ def main():
     classes15 = ensure_15_classes()
 
     banner("Step 3: Generate sample image")
-    sample = ensure_sample_image()
+    sample = ensure_sample_image(args.image)
 
     banner("Step 4: ONNX Runtime quick model-only benchmark")
     run([
@@ -167,7 +181,7 @@ def main():
 
     if not args.skip_quant:
         banner("Step 7: INT8 calibration (OpenVINO, with normalization fix)")
-        calib_dir = ensure_calib_images(n=200, imgsz=args.imgsz)
+        calib_dir = ensure_calib_images(n=200, imgsz=args.imgsz, override=args.calib_dir)
         int8_dir.mkdir(parents=True, exist_ok=True)
         run([
             sys.executable, "scripts/calibrate_openvino_int8.py",
@@ -217,4 +231,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

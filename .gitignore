@@ -2,9 +2,10 @@ __pycache__/
 .DS_Store
 models/
 outputs/
+calib_images/
+samples/
 *.onnx
 *.xml
 *.bin
 *.engine
 *.pt
-

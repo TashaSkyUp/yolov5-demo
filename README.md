@@ -99,6 +99,11 @@ Quick Start
 - The script applies training-consistent calibration preprocessing:
   - `(img.astype(np.float32)/255.0 - 0.485) / 0.229`
 
+Build Calibration Set (15 classes)
+- From COCO-format data (filter to the chosen 15 classes):
+  - `python scripts/build_calib_from_coco.py --images-dir /path/to/coco/val2017 --ann /path/to/annotations/instances_val2017.json --classes-file labels/classes_15.txt --out calib_images_15 --per-class 20`
+  - Then pass `--calib-dir calib_images_15` to the client demo or quantization script.
+
 Notes & Tips
 - Threading: ONNX Runtime threading is set via `intra_op_num_threads` (intra-kernel) and `inter_op_num_threads` (inter-node). Start with `--intra 8 --inter 4` and tune.
 - Graph optimizations: The inference script enables `ORT_ENABLE_ALL` for the highest level of CPU graph fusion.
