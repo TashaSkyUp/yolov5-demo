@@ -242,8 +242,10 @@ def main():
     expected_dtype = np.float16 if "float16" in input_type else np.float32
     allowed_idxs, all_names = load_allowed_classes(args.allowed_classes_file)
 
-    # Warmup
-    dummy = np.zeros((args.batch, 3, args.imgsz, args.imgsz), dtype=expected_dtype)
+    # Warmup: respect static batch=1 models
+    expected_bs = sess.get_inputs()[0].shape[0] if hasattr(sess.get_inputs()[0], 'shape') else None
+    warmup_bs = 1 if expected_bs in (1, '1') else args.batch
+    dummy = np.zeros((warmup_bs, 3, args.imgsz, args.imgsz), dtype=expected_dtype)
     for _ in range(args.warmup):
         _ = sess.run([output_name], {input_name: dummy})
 
@@ -251,6 +253,19 @@ def main():
     t0 = time.time()
     all_dets = []
     for i in range(0, n, args.batch):
+        current_bs = images[i : i + args.batch].shape[0]
+        # If model enforces batch=1, run per-image
+        if expected_bs in (1, '1') and current_bs > 1:
+            for j in range(current_bs):
+                batch = images[i + j : i + j + 1].astype(expected_dtype)
+                start = time.time()
+                out = sess.run([output_name], {input_name: batch})[0]
+                end = time.time()
+                pred = out[0]
+                (h0, w0), r, (dw, dh), path = metas[i + j]
+                dets = postprocess(pred, (h0, w0), (dw, dh), r, conf_thres=args.conf, iou_thres=args.iou, max_det=args.max_det)
+                all_dets.append((path, dets, end - start))
+            continue
         batch = images[i : i + args.batch].astype(expected_dtype)
         start = time.time()
         out = sess.run([output_name], {input_name: batch})[0]

@@ -61,6 +61,10 @@ Repo Contents
 - `scripts/export_and_bench.py` — One-shot helper: export (optional) then run quick benchmark.
 - `scripts/generate_15_classes.py` — Picks 15 random classes from COCO and writes `labels/classes_15.txt`.
 - `labels/coco80.txt` — COCO class names used for mapping/filtering.
+ - `scripts/client_demo.py` — Client-facing, step-by-step demo that runs the full story.
+ - `scripts/build_calib_from_coco.py` — Build a 15‑class calibration subset from COCO (supports `--download`).
+ - `calib_images_15/` — COCO‑derived, tracked sample calibration set aligned to the 15 chosen classes.
+ - `data/object_dataset/` — Unzipped real sample frames for the demo (from `object_dataset.zip`).
 
 Environment
 - Python 3.8+
@@ -103,6 +107,24 @@ Build Calibration Set (15 classes)
 - From COCO-format data (filter to the chosen 15 classes):
   - `python scripts/build_calib_from_coco.py --images-dir /path/to/coco/val2017 --ann /path/to/annotations/instances_val2017.json --classes-file labels/classes_15.txt --out calib_images_15 --per-class 20`
   - Then pass `--calib-dir calib_images_15` to the client demo or quantization script.
+
+Client Demo (end-to-end, presentation-ready)
+- Runs with banners: ensures ONNX, selects 15 classes, picks a real image,
+  runs ORT quick bench, dynamic batching note, memory report, does INT8 calibration + OV bench,
+  and saves a final visualization restricted to 15 classes.
+- Use included data automatically:
+  - `python scripts/client_demo.py --onnx models/yolov5s.onnx --imgsz 640 --runs 30 --warmup 5 --intra 8 --inter 4`
+  - If `object_dataset.zip` is present, it is unzipped to `data/object_dataset` and used for `--image` and, if unspecified, `--calib-dir`.
+- Override inputs:
+  - Real frame: `--image data/object_dataset/car_1.jpg`
+  - Calibration dir: `--calib-dir calib_images_15`
+
+Included Artifacts
+- `models/yolov5s.onnx` — ready-made YOLOv5s ONNX for CPU inference.
+- `models/int8/model_int8.xml` and `models/int8/model_int8.bin` — INT8 OpenVINO IR produced with the correct calibration normalization.
+- `calib_images_15/` — COCO-derived, balanced subset for the chosen 15 classes (used for INT8 calibration in demos).
+- `data/object_dataset/` — unzipped real sample frames (from `object_dataset.zip`) used by the client demo.
+- `outputs/sample_pred.jpg` — example visualization produced by the demo (regenerated when running).
 
 Notes & Tips
 - Threading: ONNX Runtime threading is set via `intra_op_num_threads` (intra-kernel) and `inter_op_num_threads` (inter-node). Start with `--intra 8 --inter 4` and tune.

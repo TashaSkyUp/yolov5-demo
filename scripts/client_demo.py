@@ -96,6 +96,20 @@ def ensure_sample_image(override: str | None = None):
             raise SystemExit(f"Provided --image not found: {p}")
         print(f"Using provided image: {p}")
         return p
+    # Auto-detect repo dataset zip
+    zip_path = Path("object_dataset.zip")
+    if zip_path.exists():
+        dz = Path("data/object_dataset")
+        if not dz.exists() or not any(dz.rglob("*.jpg")):
+            banner(f"Unzipping {zip_path} to {dz}")
+            dz.mkdir(parents=True, exist_ok=True)
+            run(["unzip", "-q", str(zip_path), "-d", str(dz)])
+        # pick first jpg/png
+        for ext in ("*.jpg", "*.jpeg", "*.png"):
+            imgs = list(dz.rglob(ext))
+            if imgs:
+                print(f"Using dataset image: {imgs[0]}")
+                return imgs[0]
     sample = Path("samples/sample.jpg")
     if sample.exists():
         print(f"Sample image present: {sample}")
@@ -112,6 +126,16 @@ def ensure_calib_images(n=200, imgsz=640, override: str | None = None):
             raise SystemExit(f"Provided --calib-dir is empty or missing .jpg images: {d}")
         print(f"Using provided calibration dir: {d}")
         return d
+    # If object_dataset.zip exists, use its folder as calibration set by default
+    zip_path = Path("object_dataset.zip")
+    if not override and zip_path.exists():
+        dz = Path("data/object_dataset")
+        if not dz.exists() or not any(dz.rglob("*.jpg")):
+            banner(f"Unzipping {zip_path} to {dz}")
+            dz.mkdir(parents=True, exist_ok=True)
+            run(["unzip", "-q", str(zip_path), "-d", str(dz)])
+        print(f"Using dataset directory for calibration: {dz}")
+        return dz
     d = Path("calib_images")
     if d.exists() and any(d.glob("*.jpg")):
         print(f"Calibration directory present: {d}")
@@ -138,6 +162,7 @@ def main():
     ap.add_argument("--inter", type=int, default=4)
     ap.add_argument("--int8-dir", default="models/int8")
     ap.add_argument("--image", help="Path to a real image for the final inference step")
+    ap.add_argument("--images-dir", help="Directory of images to run full predictions + save visualizations")
     ap.add_argument("--calib-dir", help="Path to a real calibration images directory (jpgs)")
     ap.add_argument("--skip-quant", action="store_true")
     args = ap.parse_args()
@@ -206,25 +231,52 @@ def main():
             "--runs", str(args.runs), "--warmup", str(args.warmup),
         ])
 
-    banner("Step 9: Example inference restricted to 15 classes (save visualization)")
+    # Prefer directory predictions if provided or dataset present
+    dataset_dir = None
+    if args.images_dir:
+        dataset_dir = Path(args.images_dir)
+    else:
+        dz = Path("data/object_dataset")
+        if dz.exists() and any(dz.rglob("*.jpg")):
+            dataset_dir = dz
+
     out_dir = Path("outputs")
     out_dir.mkdir(parents=True, exist_ok=True)
-    run([
-        sys.executable, "scripts/infer_onnx.py",
-        "--onnx", str(onnx_path),
-        "--image", str(sample),
-        "--imgsz", str(args.imgsz),
-        "--conf", "0.25", "--iou", "0.45",
-        "--intra", str(args.intra), "--inter", str(args.inter),
-        "--save-vis", str(out_dir),
-        "--allowed-classes-file", "labels/classes_15.txt",
-    ])
+    if dataset_dir and dataset_dir.exists():
+        banner("Step 9: Inference over dataset (save visualizations for all images)")
+        run([
+            sys.executable, "scripts/infer_onnx.py",
+            "--onnx", str(onnx_path),
+            "--dir", str(dataset_dir),
+            "--batch", "8",
+            "--warmup", "2",
+            "--imgsz", str(args.imgsz),
+            "--conf", "0.25", "--iou", "0.45",
+            "--intra", str(args.intra), "--inter", str(args.inter),
+            "--save-vis", str(out_dir),
+            "--allowed-classes-file", "labels/classes_15.txt",
+        ])
+    else:
+        banner("Step 9: Example inference restricted to 15 classes (save visualization)")
+        run([
+            sys.executable, "scripts/infer_onnx.py",
+            "--onnx", str(onnx_path),
+            "--image", str(sample),
+            "--imgsz", str(args.imgsz),
+            "--conf", "0.25", "--iou", "0.45",
+            "--intra", str(args.intra), "--inter", str(args.inter),
+            "--save-vis", str(out_dir),
+            "--allowed-classes-file", "labels/classes_15.txt",
+        ])
 
     banner("Demo complete")
     print("- ONNX model:", onnx_path)
     print("- 15 classes file: labels/classes_15.txt (may vary per run)")
-    print("- Sample image:", sample)
-    print("- Visualization saved under:", out_dir)
+    if dataset_dir and dataset_dir.exists():
+        print("- Dataset dir:", dataset_dir)
+    else:
+        print("- Sample image:", sample)
+    print("- Visualizations saved under:", out_dir)
     if not args.skip_quant:
         print("- INT8 IR saved under:", int8_dir)
 
