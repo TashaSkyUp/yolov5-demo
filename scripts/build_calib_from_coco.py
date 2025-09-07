@@ -38,6 +38,7 @@ def main():
     ap.add_argument("--out", default="calib_images_15", help="Output directory for calibration images")
     ap.add_argument("--per-class", type=int, default=20, help="Target images per class")
     ap.add_argument("--seed", type=int, default=0, help="Random seed")
+    ap.add_argument("--download", action="store_true", help="Download selected images using coco_url/file_name into --out if not present in --images-dir")
     args = ap.parse_args()
 
     random.seed(args.seed)
@@ -101,19 +102,30 @@ def main():
 
     # Copy files
     copied = 0
+    # Build map img_id -> coco_url
+    id_to_url = {im["id"]: im.get("coco_url", "") for im in coco["images"]}
+
     for img_id in selected:
         fname = image_id_to_fname[img_id]
         src = images_dir / fname
         dst = out_dir / fname
         dst.parent.mkdir(parents=True, exist_ok=True)
-        if not src.exists():
-            print(f"WARNING: missing image: {src}")
-            continue
-        shutil.copy2(src, dst)
-        copied += 1
+        if src.exists():
+            shutil.copy2(src, dst)
+            copied += 1
+        elif args.download:
+            url = id_to_url.get(img_id) or f"http://images.cocodataset.org/val2017/{fname}"
+            print(f"Downloading {fname} -> {dst}")
+            import urllib.request
+            try:
+                urllib.request.urlretrieve(url, dst)
+                copied += 1
+            except Exception as e:
+                print(f"WARNING: failed to download {url}: {e}")
+        else:
+            print(f"WARNING: missing image and --download not set: {src}")
     print(f"Copied {copied} images to {out_dir}")
 
 
 if __name__ == "__main__":
     main()
-
