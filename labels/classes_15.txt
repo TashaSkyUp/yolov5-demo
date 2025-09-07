@@ -1,0 +1,15 @@
+bed
+bench
+bicycle
+book
+bus
+car
+donut
+handbag
+keyboard
+knife
+motorcycle
+sandwich
+stop sign
+traffic light
+truck
